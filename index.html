@@ -146,7 +146,7 @@
 
         <div class="checkbox-container">
             <input type="checkbox" id="alert-sound" checked>
-            <label for="alert-sound" style="display:inline; margin:0; color:inherit;">Activer l'alerte sonore</label>
+            <label for="alert-sound" style="display:inline; margin:0; color:inherit;">Activer l'alerte sonore (5s avant)</label>
         </div>
 
         <button class="btn-main" onclick="startTimer()">Démarrer la séance</button>
@@ -170,6 +170,7 @@
         let timerInterval = null;
         let wakeLock = null;
         let audioCtx = null;
+        let targetEndTime = 0;
 
         function initAudio() {
             if (!audioCtx) {
@@ -224,9 +225,8 @@
         }
 
         function startTimer() {
-            // Débloque l'audio immédiatement lors du clic sur le bouton
             initAudio();
-            playBeep(880, 'sine', 0.05); // Petit bip silencieux pour "réveiller" l'audio iOS
+            playBeep(880, 'sine', 0.05);
 
             const wMin = parseInt(document.getElementById('work-min').value) || 0;
             const wSec = parseInt(document.getElementById('work-sec').value) || 0;
@@ -253,31 +253,30 @@
             requestWakeLock();
             updateDisplay();
 
-            let lastTimestamp = Date.now();
+            targetEndTime = Date.now() + (timeLeft * 1000);
+
+            if (timerInterval) clearInterval(timerInterval);
+
             timerInterval = setInterval(() => {
                 const now = Date.now();
-                const delta = Math.floor((now - lastTimestamp) / 1000);
-                
-                if (delta >= 1) {
-                    timeLeft -= delta;
-                    lastTimestamp = now;
+                timeLeft = Math.max(0, Math.ceil((targetEndTime - now) / 1000));
 
-                    const soundEnabled = document.getElementById('alert-sound').checked;
+                const soundEnabled = document.getElementById('alert-sound').checked;
 
-                    if (timeLeft <= 3 && timeLeft > 0 && soundEnabled) {
-                        playBeep(587.33, 'square', 0.1); // Bip intermédiaire
-                    }
-
-                    if (timeLeft <= 0) {
-                        if (soundEnabled) {
-                            playBeep(880, 'triangle', 0.3); // Bip changement de phase
-                        }
-                        handlePhaseSwitch();
-                    } else {
-                        updateDisplay();
-                    }
+                // Bips de décompte à partir de 5 secondes restantes
+                if (timeLeft <= 5 && timeLeft > 0 && soundEnabled) {
+                    playBeep(587.33, 'square', 0.1);
                 }
-            }, 200);
+
+                if (timeLeft <= 0) {
+                    if (soundEnabled) {
+                        playBeep(880, 'triangle', 0.3);
+                    }
+                    handlePhaseSwitch();
+                } else {
+                    updateDisplay();
+                }
+            }, 250);
         }
 
         function handlePhaseSwitch() {
@@ -303,6 +302,7 @@
                 isWorkPhase = true;
                 timeLeft = workTime;
             }
+            targetEndTime = Date.now() + (timeLeft * 1000);
             updateDisplay();
         }
 
