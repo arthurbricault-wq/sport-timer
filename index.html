@@ -173,28 +173,37 @@
 
         function initAudio() {
             if (!audioCtx) {
-                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                const AudioContext = window.AudioContext || window.webkitAudioContext;
+                if (AudioContext) {
+                    audioCtx = new AudioContext();
+                }
+            }
+            if (audioCtx && audioCtx.state === 'suspended') {
+                audioCtx.resume();
             }
         }
 
-        function playBeep(frequency = 440, duration = 150) {
+        function playBeep(freq = 440, type = 'sine', duration = 0.15) {
             try {
                 initAudio();
-                if (audioCtx.state === 'suspended') {
-                    audioCtx.resume();
-                }
+                if (!audioCtx) return;
+
                 const osc = audioCtx.createOscillator();
                 const gain = audioCtx.createGain();
-                osc.type = 'sine';
-                osc.frequency.value = frequency;
-                gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
-                gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + (duration / 1000));
+
+                osc.type = type;
+                osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+
+                gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + duration);
+
                 osc.connect(gain);
                 gain.connect(audioCtx.destination);
+
                 osc.start();
-                osc.stop(audioCtx.currentTime + (duration / 1000));
+                osc.stop(audioCtx.currentTime + duration);
             } catch (e) {
-                console.log("Audio non supporté ou bloqué");
+                console.error("Erreur audio", e);
             }
         }
 
@@ -215,7 +224,10 @@
         }
 
         function startTimer() {
+            // Débloque l'audio immédiatement lors du clic sur le bouton
             initAudio();
+            playBeep(880, 'sine', 0.05); // Petit bip silencieux pour "réveiller" l'audio iOS
+
             const wMin = parseInt(document.getElementById('work-min').value) || 0;
             const wSec = parseInt(document.getElementById('work-sec').value) || 0;
             workTime = (wMin * 60) + wSec;
@@ -253,12 +265,12 @@
                     const soundEnabled = document.getElementById('alert-sound').checked;
 
                     if (timeLeft <= 3 && timeLeft > 0 && soundEnabled) {
-                        playBeep(600, 100); // Bip de compte à rebours
+                        playBeep(587.33, 'square', 0.1); // Bip intermédiaire
                     }
 
                     if (timeLeft <= 0) {
                         if (soundEnabled) {
-                            playBeep(880, 400); // Bip de changement de phase
+                            playBeep(880, 'triangle', 0.3); // Bip changement de phase
                         }
                         handlePhaseSwitch();
                     } else {
@@ -324,7 +336,7 @@
         function endTimer() {
             clearInterval(timerInterval);
             releaseWakeLock();
-            playBeep(1000, 600);
+            playBeep(1046.50, 'sine', 0.5);
             alert("Séance terminée ! Bravo !");
             stopTimer();
         }
