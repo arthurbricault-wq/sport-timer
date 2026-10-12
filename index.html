@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Minuteur Sport</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+            background-color: #1c1c1e;
+            color: white;
+            text-align: center;
+            padding: 20px;
+            margin: 0;
+            user-select: none;
+        }
+        h1 { margin-top: 15px; }
+        .card {
+            background: #2c2c2e;
+            padding: 15px;
+            border-radius: 15px;
+            margin: 12px auto;
+            max-width: 400px;
+        }
+        .time-inputs {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 10px;
+            margin-top: 8px;
+        }
+        input[type="number"] {
+            width: 70px;
+            padding: 10px;
+            font-size: 18px;
+            text-align: center;
+            background: #3a3a3c;
+            color: white;
+            border: 1px solid #555;
+            border-radius: 8px;
+        }
+        .checkbox-container {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+        .checkbox-container input[type="checkbox"] {
+            width: 22px;
+            height: 22px;
+            accent-color: #007aff;
+        }
+        button {
+            background-color: #007aff;
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            font-size: 18px;
+            font-weight: bold;
+            border-radius: 12px;
+            cursor: pointer;
+            width: 100%;
+            max-width: 400px;
+            margin-top: 15px;
+        }
+        button.stop { background-color: #ff3b30; }
+        button.back { 
+            background-color: #48484a; 
+            margin-bottom: 15px;
+            padding: 10px 20px;
+            font-size: 16px;
+            width: auto;
+        }
+        #timer-screen { display: none; }
+        #phase-title { font-size: 40px; font-weight: bold; margin: 15px 0; }
+        #countdown { font-size: 85px; font-family: monospace; font-weight: bold; margin: 15px 0; }
+        #round-info { font-size: 22px; color: #8e8e93; }
+        .controls {
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+            max-width: 400px;
+            margin: 0 auto;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- ÉCRAN DE CONFIGURATION -->
+    <div id="config-screen">
+        <h1>Minuteur Sport </h1>
+        
+        <div class="card">
+            <h3> Temps de Course</h3>
+            <div class="time-inputs">
+                <input type="number" id="run-min" value="0" min="0"> min 
+                <input type="number" id="run-sec" value="30" min="0" max="59"> sec
+            </div>
+        </div>
+
+        <div class="card">
+            <h3> Temps de Pause</h3>
+            <div class="time-inputs">
+                <input type="number" id="rest-min" value="0" min="0"> min 
+                <input type="number" id="rest-sec" value="15" min="0" max="59"> sec
+            </div>
+        </div>
+
+        <div class="card">
+            <h3> Nombre de Tours</h3>
+            <input type="number" id="rounds" value="5" min="1" style="width: 100px;">
+        </div>
+
+        <!-- OPTION BIP PREVENTIF -->
+        <div class="card">
+            <label class="checkbox-container">
+                <input type="checkbox" id="enable-warning-beep" checked>
+                <span>Activer l'alerte 5s avant la fin</span>
+            </label>
+        </div>
+
+        <button onclick="startWorkout()">Démarrer la séance</button>
+    </div>
+
+    <!-- ÉCRAN DE DÉROULEMENT DU TIMER -->
+    <div id="timer-screen">
+        <button class="back" onclick="stopWorkout()">← Retour / Réglages</button>
+        
+        <div id="phase-title">COURS !</div>
+        <div id="round-info">Tour 1 / 5</div>
+        <div id="countdown">00:30</div>
+
+        <div class="controls">
+            <button onclick="pauseWorkout()" id="pause-btn" style="background-color: #ff9500;">Pause</button>
+            <button class="stop" onclick="stopWorkout()">Arrêter</button>
+        </div>
+    </div>
+
+    <!-- Piste audio silencieuse pour empêcher iOS de couper l'application en arrière-plan -->
+    <audio id="silent-audio" loop src="data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA="></audio>
+
+    <script>
+        let timer = null;
+        let isRunningPhase = true;
+        let currentRound = 1;
+        let timeLeft = 0;
+        let isPaused = false;
+        let runTime = 30;
+        let restTime = 15;
+        let totalRounds = 5;
+        let warningBeepEnabled = true;
+
+        let audioCtx = null;
+        let expectedEndTime = 0;
+
+        function initAudio() {
+            if (!audioCtx) {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            }
+            // Démarre la piste audio silencieuse pour maintenir l'application éveillée en arrière-plan
+            const silentAudio = document.getElementById('silent-audio');
+            silentAudio.play().catch(e => console.log("Silent audio autoplay prevented", e));
+        }
+
+        function startWorkout() {
+            initAudio();
+
+            runTime = (parseInt(document.getElementById('run-min').value) || 0) * 60 + (parseInt(document.getElementById('run-sec').value) || 0);
+            restTime = (parseInt(document.getElementById('rest-min').value) || 0) * 60 + (parseInt(document.getElementById('rest-sec').value) || 0);
+            totalRounds = parseInt(document.getElementById('rounds').value) || 5;
+            warningBeepEnabled = document.getElementById('enable-warning-beep').checked;
+
+            if (runTime <= 0) {
+                alert("Entre un temps de course valide !");
+                return;
+            }
+
+            currentRound = 1;
+            isRunningPhase = true;
+            timeLeft = runTime;
+            isPaused = false;
+
+            document.getElementById('config-screen').style.display = 'none';
+            document.getElementById('timer-screen').style.display = 'block';
+            document.getElementById('pause-btn').innerText = "Pause";
+
+            updateDisplay();
+            startPhaseTimer();
+        }
+
+        function startPhaseTimer() {
+            expectedEndTime = Date.now() + (timeLeft * 1000);
+            clearInterval(timer);
+            
+            timer = setInterval(() => {
+                if (!isPaused) {
+                    // Calcul précis basé sur l'horloge réelle (évite les décalages quand le téléphone veille)
+                    const now = Date.now();
+                    const secondsLeft = Math.ceil((expectedEndTime - now) / 1000);
+
+                    if (secondsLeft !== timeLeft) {
+                        timeLeft = secondsLeft;
+
+                        // Bip d'avertissement 5s avant la fin (si l'option est cochée)
+                        if (warningBeepEnabled && timeLeft <= 5 && timeLeft > 0) {
+                            playBeep(600, 0.15);
+                        }
+
+                        if (timeLeft <= 0) {
+                            // Bip de changement de phase
+                            playBeep(1000, 0.5);
+                            switchPhase();
+                        } else {
+                            updateDisplay();
+                        }
+                    }
+                }
+            }, 250);
+        }
+
+        function switchPhase() {
+            if (isRunningPhase) {
+                if (restTime > 0) {
+                    isRunningPhase = false;
+                    timeLeft = restTime;
+                } else {
+                    nextRound();
+                    return;
+                }
+            } else {
+                nextRound();
+                return;
+            }
+            updateDisplay();
+            startPhaseTimer();
+        }
+
+        function nextRound() {
+            if (currentRound < totalRounds) {
+                currentRound++;
+                isRunningPhase = true;
+                timeLeft = runTime;
+                updateDisplay();
+                startPhaseTimer();
+            } else {
+                playBeep(1200, 0.8);
+                alert("Séance terminée !");
+                stopWorkout();
+            }
+        }
+
+        function updateDisplay() {
+            const title = document.getElementById('phase-title');
+            title.innerText = isRunningPhase ? " COURS !" : " PAUSE";
+            title.style.color = isRunningPhase ? "#34c759" : "#ff9500";
+
+            document.getElementById('round-info').innerText = `Tour ${currentRound} sur ${totalRounds}`;
+            
+            const displayTime = Math.max(0, timeLeft);
+            const min = String(Math.floor(displayTime / 60)).padStart(2, '0');
+            const sec = String(displayTime % 60).padStart(2, '0');
+            document.getElementById('countdown').innerText = `${min}:${sec}`;
+        }
+
+        function pauseWorkout() {
+            isPaused = !isPaused;
+            if (isPaused) {
+                clearInterval(timer);
+                document.getElementById('pause-btn').innerText = "Reprendre";
+            } else {
+                document.getElementById('pause-btn').innerText = "Pause";
+                expectedEndTime = Date.now() + (timeLeft * 1000);
+                startPhaseTimer();
+            }
+        }
+
+        function stopWorkout() {
+            clearInterval(timer);
+            const silentAudio = document.getElementById('silent-audio');
+            silentAudio.pause();
+            document.getElementById('config-screen').style.display = 'block';
+            document.getElementById('timer-screen').style.display = 'none';
+        }
+
+        function playBeep(freq, duration) {
+            try {
+                if (audioCtx.state === 'suspended') {
+                    audioCtx.resume();
+                }
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.type = "sine";
+                osc.frequency.value = freq;
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                osc.start();
+                gain.gain.exponentialRampToValueAtTime(0.00001, audioCtx.currentTime + duration);
+                osc.stop(audioCtx.currentTime + duration);
+            } catch (e) {
+                console.log("Erreur audio : ", e);
+            }
+        }
+    </script>
+</body>
+</html>
